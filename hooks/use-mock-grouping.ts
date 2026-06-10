@@ -30,38 +30,41 @@ export function useMockGrouping() {
   const handleUpload = useCallback((newFiles: File[]) => {
     setIsProcessing(true);
     
-    setFiles((prevFiles) => {
-      const updatedFiles = [...prevFiles, ...newFiles];
-      
-      setImageMap((prevMap) => {
-        const nextMap = { ...prevMap };
-        newFiles.forEach((file) => {
-          const key = getFileKey(file);
-          if (!nextMap[key]) {
-            const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
-            // Create a lightweight, memory-efficient Object URL instead of a large base64 Data URL
-            nextMap[key] = {
-              id: key,
-              name: file.name,
-              url: URL.createObjectURL(file),
-              size: `${sizeInMB} MB`,
-              type: file.type,
-            };
-          }
+    // We defer the synchronous state mapping to a small timeout
+    // to give the browser time to paint the loading spinner state.
+    setTimeout(() => {
+      setFiles((prevFiles) => {
+        const updatedFiles = [...prevFiles, ...newFiles];
+        
+        setImageMap((prevMap) => {
+          const nextMap = { ...prevMap };
+          newFiles.forEach((file) => {
+            const key = getFileKey(file);
+            if (!nextMap[key]) {
+              const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
+              nextMap[key] = {
+                id: key,
+                name: file.name,
+                url: URL.createObjectURL(file),
+                size: `${sizeInMB} MB`,
+                type: file.type,
+              };
+            }
+          });
+
+          // Sync images flat list
+          const newImages = updatedFiles
+            .map((file) => nextMap[getFileKey(file)])
+            .filter((img): img is UploadedImage => !!img);
+          setImages(newImages);
+
+          return nextMap;
         });
 
-        // Sync images flat list
-        const newImages = updatedFiles
-          .map((file) => nextMap[getFileKey(file)])
-          .filter((img): img is UploadedImage => !!img);
-        setImages(newImages);
-
-        return nextMap;
+        return updatedFiles;
       });
-
       setIsProcessing(false);
-      return updatedFiles;
-    });
+    }, 50);
   }, []);
 
   const clearAll = useCallback(() => {
