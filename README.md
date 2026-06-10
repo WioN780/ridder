@@ -1,2 +1,5 @@
-# ridder
-Utility to bulk generate copy-paste ready listings of clothes for retail
+## Getting Started
+
+quick listings creator tool for marketplaces like Vinted
+
+docker compose up --build
