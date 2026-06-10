@@ -84,7 +84,8 @@ export default function Home() {
 
     const initializeModels = async () => {
       try {
-        const url = `http://localhost:8000/list-models?api_key=${encodeURIComponent(savedKey)}`;
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+        const url = `${baseUrl}/list-models?api_key=${encodeURIComponent(savedKey)}`;
         const res = await fetch(url);
         if (res.ok) {
           const data = await res.json();
@@ -156,7 +157,8 @@ export default function Home() {
     formData.append("pricing_strategy", pricingStrategy);
 
     try {
-      const response = await fetch("http://localhost:8000/generate-listing", {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(`${baseUrl}/generate-listing`, {
         method: "POST",
         body: formData,
       });
@@ -208,9 +210,9 @@ export default function Home() {
     formData.append("currency", currency);
     formData.append("pricing_strategy", pricingStrategy);
 
-    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const response = await fetch(
-        "http://localhost:8000/generate-batch-listings",
+        `${baseUrl}/generate-batch-listings`,
         {
           method: "POST",
           body: formData,

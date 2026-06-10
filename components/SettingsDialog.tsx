@@ -81,7 +81,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const fetchModels = async (key: string) => {
     setIsLoadingModels(true);
     try {
-      const url = `http://localhost:8000/list-models?api_key=${encodeURIComponent(key)}`;
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const url = `${baseUrl}/list-models?api_key=${encodeURIComponent(key)}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
