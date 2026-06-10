@@ -210,6 +210,7 @@ export default function Home() {
     formData.append("currency", currency);
     formData.append("pricing_strategy", pricingStrategy);
 
+    try {
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const response = await fetch(
         `${baseUrl}/generate-batch-listings`,
