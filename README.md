@@ -1,4 +1,4 @@
-# Ridder
+# Ridder 📦
 
 Ridder is an automated batch asset clustering and AI listing generation workspace. It is built to save time when listing and getting rid of pre-owned items on retail marketplaces (such as Vinted). 
 
@@ -6,39 +6,39 @@ Rather than manually creating separate listings for dozens of items, sellers can
 
 ---
 
-## Key Features
+## Key Features ✨
 
-- **Joint Visual Clustering:** Processes flat folders of unstructured photos, detecting which images are different angles, tags, or details of the same physical item, and automatically grouping them into logical lots.
-- **Multimodal Listing Generation:** Leverages Gemini models to inspect item images, identify the brand, size, and condition, estimate measurements, and write localized, SEO-ready product descriptions and tags.
-- **Configurable Pricing Profiles:**
+- **Joint Visual Clustering 🧩:** Processes flat folders of unstructured photos, detecting which images are different angles, tags, or details of the same physical item, and automatically grouping them into logical lots.
+- **Multimodal Listing Generation 🤖:** Leverages Gemini models to inspect item images, identify the brand, size, and condition, estimate measurements, and write localized, SEO-ready product descriptions and tags.
+- **Configurable Pricing Profiles 🏷️:**
   - **Vinted Frugal:** Low, conservative bargain pricing optimized for price-sensitive buyers (defaulting listings to low ranges like 5 - 25 units).
   - **Standard Secondhand:** Balanced, competitive market value.
   - **Premium Resale:** High-end, optimistic listing prices.
-- **Localized Currencies:** Full support for USD ($), EUR (€), HRN (₴), and PLN (zł).
-- **Interactive Review Board:** A minimal frontend workspace to manually inspect, merge, or split visual clusters before executing AI generation.
-- **Copy-Paste Optimization:** Generates ready-to-use plaintext listings and structured JSON payloads for rapid listing deployment.
+- **Localized Currencies 🌍:** Full support for USD ($), EUR (€), HRN (₴), and PLN (zł).
+- **Interactive Review Board 📋:** A minimal frontend workspace to manually inspect, merge, or split visual clusters before executing AI generation.
+- **Copy-Paste Optimization 📋:** Generates ready-to-use plaintext listings and structured JSON payloads for rapid listing deployment.
 
 ---
 
-## Tech Stack
+## Tech Stack 🛠️
 
-### Frontend
+### Frontend 🎨
 - **Framework:** Next.js (React, Client-Side Rendering)
 - **Styling:** Tailwind CSS / Vanilla CSS (Modern Dark Mode / shadcn/ui components)
 - **Icons:** Lucide React
 - **Client Utilities:** Custom local storage hooks for local-first settings storage (API Keys, model options, currencies, and pricing strategies are stored entirely browser-side).
 
-### Backend
+### Backend ⚙️
 - **Framework:** FastAPI (Python 3.13)
 - **API Engine:** Google GenAI SDK (Gemini Developer API Integration)
 - **Image Processing:** Pillow (PIL) for aspect-ratio preservation, downscaling (max 1024px), and compressed JPEG serialization to minimize LLM token usage and latency.
 
-### Deployment & Orchestration
+### Deployment & Orchestration 🚢
 - **Docker Compose:** Multi-stage Docker builds orchestrating Next.js node server and FastAPI python server.
 
 ---
 
-## Getting Started
+## Getting Started 🚀
 
 ### Prerequisites
 - [Docker](https://www.docker.com/) and Docker Compose installed.
@@ -56,7 +56,7 @@ docker compose up --build
 
 ---
 
-## Development Setup (Running Locally)
+## Development Setup (Running Locally) 💻
 
 If you prefer to run the components directly on your host machine:
 
@@ -88,7 +88,7 @@ If you prefer to run the components directly on your host machine:
 
 ---
 
-## How to Use
+## How to Use 📖
 
 1. Open `http://localhost:3000` in your browser.
 2. Click the **System Settings** icon (gear symbol in the top right).
