@@ -156,8 +156,9 @@ export default function Home() {
     formData.append("currency", currency);
     formData.append("pricing_strategy", pricingStrategy);
 
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const response = await fetch(`${baseUrl}/generate-listing`, {
         method: "POST",
         body: formData,
@@ -175,7 +176,7 @@ export default function Home() {
     } catch (err: any) {
       const msg =
         err.name === "TypeError" && err.message.includes("fetch")
-          ? "NETWORK ERROR: FAILED TO CONNECT TO FASTAPI BACKEND ON PORT 8000."
+          ? `NETWORK ERROR: FAILED TO CONNECT TO FASTAPI BACKEND AT ${baseUrl}.`
           : err.message || "AN UNEXPECTED ERROR OCCURRED.";
       setErrorLots((prev) => ({ ...prev, [lotId]: msg }));
       throw err;
@@ -210,8 +211,9 @@ export default function Home() {
     formData.append("currency", currency);
     formData.append("pricing_strategy", pricingStrategy);
 
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
       const response = await fetch(
         `${baseUrl}/generate-batch-listings`,
         {
@@ -266,7 +268,7 @@ export default function Home() {
     } catch (err: any) {
       const msg =
         err.name === "TypeError" && err.message.includes("fetch")
-          ? "NETWORK ERROR: CANNOT CONNECT TO BACKEND ON PORT 8000."
+          ? `NETWORK ERROR: CANNOT CONNECT TO BACKEND AT ${baseUrl}.`
           : err.message || "AI BATCH PROCESS FAILED.";
       setAiError(msg);
     } finally {
