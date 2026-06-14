@@ -99,6 +99,11 @@ This document provides a comprehensive analysis of the **Ridder** workspace, its
 - **Handler**: `api_generate_batch_listings`
 - **Response Schema**: [BatchListingResponse](file:///home/mark/Projects/ridder/backend/main.py#L84)
 
+### POST `/generate-image`
+- **Purpose**: Generates a clean cover/product image using Gemini's Imagen 3 model, guided by prompt configurations and optional style references.
+- **Handler**: `api_generate_image`
+- **Response Schema**: `{"image_url": "data:image/jpeg;base64,..."}`
+
 ---
 
 ## 6. Development Tips & Conventions
@@ -114,17 +119,22 @@ Gemini is instructed on three distinct strategies:
 
 ### React State Shifts on Lot Modification & Board Undo
 - **Smart Listing Shifting**: Whenever an image lot is merged or split manually by a user, the frontend no longer clears all listings. Instead, it dynamically shifts the listing keys (IDs) of the unaffected lots up or down to align with their new lot positions (e.g. if `lot-3` becomes `lot-2` after a merge up, its generated listing shifts to `lot-2` automatically). The listing of the affected lot itself is cleared to prompt clean regeneration.
-- **Undo History**: Before any layout modification (merge, split, clear), the system saves the current `lots` and `listings` state on a history stack. An **UNDO** button is displayed on the main action bar, allowing the user to restore the previous state and generated listings instantly.
+- **Undo History**: Before any layout modification (merge, split, clear), the system saves the current `lots`, `listings`, and `generatedImages` state on a history stack. An **UNDO** button is displayed on the main action bar, allowing the user to restore the previous state and generated listings instantly.
 
 ### Language Customization & Example Output Style Guide
 - **Custom Language Generation**: Language options (e.g. English, French, German, Spanish, Ukrainian, etc.) are chosen in the settings menu, saved in `localStorage`, and passed to the backend generation endpoints. The system instructs Gemini to generate all output values (title, description, tags, measurements, etc.) in the selected language.
 - **Style Guide (Example Output)**: Users can paste an example description inside the settings. The system instructs the Gemini model to emulation the style, tone, format, and structure of this text when generating the description for single and batch listings.
 
+### Image Generation & Style Reference Guided by Gemini
+- **Gemini-guided Style References**: When the user configures an image style reference in settings (automatically resized client-side to fit inside localStorage), the backend first uses Gemini (`gemini-2.5-flash`) to analyze its photographic composition, background, lighting, and colors. This detailed style analysis is injected dynamically into the Imagen prompt along with the item's title/description, resulting in highly cohesive, style-matched cover images without requiring complex cloud storage setups.
+- **Tabbed Preview Interface**: The [LotCard](file:///home/mark/Projects/ridder/components/LotCard.tsx) component uses a tabbed view (`Original Photos` vs `AI Cover Image`) to display both the original carousel and the generated representation image.
+
 ### Rendering & Performance Optimizations (Lag Prevention)
 - **Memoized Lists & Grids**: The unallocated flat images grid is wrapped in a React `useMemo` block to prevent re-rendering when settings or dialog states change.
 - **Component Memoization**: The [LotGrid](file:///home/mark/Projects/ridder/components/LotGrid.tsx) and [LotCard](file:///home/mark/Projects/ridder/components/LotCard.tsx) components are wrapped in `React.memo` to skip unnecessary re-renders.
-- **Stable Handler References**: Callback handlers (e.g. `handleMerge`, `handleSplit`, `generateLotListing`, `generateBatchListings`) are memoized with `useCallback` to prevent downstream re-renders caused by unstable callback prop changes.
+- **Stable Handler References**: Callback handlers (e.g. `handleMerge`, `handleSplit`, `generateLotListing`, `generateBatchListings`, `generateLotImage`) are memoized with `useCallback` to prevent downstream re-renders caused by unstable callback prop changes.
 
 ### Vinted Integration & User Utilities
 - **Draggable Photo Lots**: Implements HTML5 Drag and Drop API in [LotCard.tsx](file:///home/mark/Projects/ridder/components/LotCard.tsx) where `onDragStart` populates `event.dataTransfer.items` with the lot's actual `File` objects from `rawFiles`. This allows the user to drag the dedicated visual box and drop it directly onto desktop folders or upload forms (such as Vinted's image drops).
 - **Copy Description Shortcut**: A dedicated copy button placed in the header of the description text area in [LotCard.tsx](file:///home/mark/Projects/ridder/components/LotCard.tsx), enabling one-click clipboard copying of the generated text description.
+

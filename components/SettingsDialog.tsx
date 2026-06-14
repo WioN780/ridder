@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Sliders, Key, ShieldAlert, Loader2, Coins, Landmark, Globe, FileText } from "lucide-react";
+import { Sliders, Key, ShieldAlert, Loader2, Coins, Landmark, Globe, FileText, Image as ImageIcon, Trash2, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -45,6 +45,24 @@ const defaultModels: ModelItem[] = [
   },
 ];
 
+const defaultImageModels: ModelItem[] = [
+  {
+    name: "imagen-4.0-generate-001",
+    display_name: "Imagen 4 (Standard)",
+    description: "Google's state-of-the-art Imagen 4 text-to-image generation model.",
+  },
+  {
+    name: "imagen-4.0-fast-generate-001",
+    display_name: "Imagen 4 Fast",
+    description: "Optimized for speed and faster image generation.",
+  },
+  {
+    name: "imagen-4.0-ultra-generate-001",
+    display_name: "Imagen 4 Ultra",
+    description: "Highest fidelity representation quality model.",
+  },
+];
+
 export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [apiKey, setApiKey] = useState("");
   const [selectedModel, setSelectedModel] = useState("gemini-2.5-flash");
@@ -52,7 +70,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [pricingStrategy, setPricingStrategy] = useState("vinted_frugal");
   const [language, setLanguage] = useState("English");
   const [exampleOutput, setExampleOutput] = useState("");
+  
+  // Image Generation States
+  const [selectedImageModel, setSelectedImageModel] = useState("imagen-4.0-generate-001");
+  const [imagePrompt, setImagePrompt] = useState(
+    "A professional studio product shot, clean flat lay of the item, solid light grey background, soft studio lighting, commercial fashion photography, high detail, sharp focus."
+  );
+  const [imageStyleRef, setImageStyleRef] = useState("");
+
   const [models, setModels] = useState<ModelItem[]>([]);
+  const [imageModels, setImageModels] = useState<ModelItem[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
 
   const fetchModels = useCallback(async (key: string) => {
@@ -64,12 +91,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       if (res.ok) {
         const data = await res.json();
         setModels(data.models || defaultModels);
+        setImageModels(data.image_models || defaultImageModels);
       } else {
         setModels(defaultModels);
+        setImageModels(defaultImageModels);
       }
     } catch (err) {
       console.error("Failed to fetch models from server:", err);
       setModels(defaultModels);
+      setImageModels(defaultImageModels);
     } finally {
       setIsLoadingModels(false);
     }
@@ -84,6 +114,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       const storedStrategy = localStorage.getItem("ridder_pricing_strategy") || "vinted_frugal";
       const storedLanguage = localStorage.getItem("ridder_language") || "English";
       const storedExampleOutput = localStorage.getItem("ridder_example_output") || "";
+      const storedImageModel = localStorage.getItem("ridder_image_model") || "imagen-3.0-generate-002";
+      const storedImagePrompt = localStorage.getItem("ridder_image_prompt") || 
+        "A professional studio product shot, clean flat lay of the item, solid light grey background, soft studio lighting, commercial fashion photography, high detail, sharp focus.";
+      const storedImageStyleRef = localStorage.getItem("ridder_image_style_ref") || "";
       
       // Update state asynchronously to avoid React render cascade warning
       setTimeout(() => {
@@ -93,6 +127,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         setPricingStrategy(storedStrategy);
         setLanguage(storedLanguage);
         setExampleOutput(storedExampleOutput);
+        setSelectedImageModel(storedImageModel);
+        setImagePrompt(storedImagePrompt);
+        setImageStyleRef(storedImageStyleRef);
         fetchModels(storedKey);
       }, 0);
     }
@@ -107,6 +144,41 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     return () => clearTimeout(timer);
   }, [apiKey, open, fetchModels]);
 
+  // Handle resizing the uploaded style reference image client-side to fit inside localStorage
+  const handleStyleRefChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 512;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, width, height);
+        // Compress to JPEG with 0.7 quality
+        const resizedB64 = canvas.toDataURL("image/jpeg", 0.7);
+        setImageStyleRef(resizedB64);
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSave = () => {
     if (typeof window !== "undefined") {
       localStorage.setItem("ridder_gemini_api_key", apiKey.trim());
@@ -115,9 +187,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       localStorage.setItem("ridder_pricing_strategy", pricingStrategy);
       localStorage.setItem("ridder_language", language);
       localStorage.setItem("ridder_example_output", exampleOutput);
+      localStorage.setItem("ridder_image_model", selectedImageModel);
+      localStorage.setItem("ridder_image_prompt", imagePrompt);
+      localStorage.setItem("ridder_image_style_ref", imageStyleRef);
     }
     onOpenChange(false);
   };
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -151,15 +227,15 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           </div>
         </div>
 
-        {/* Two-column body */}
-        <div className="grid grid-cols-2 gap-6 py-3 text-xs font-mono">
-          {/* ---- LEFT COLUMN: compact controls ---- */}
+        {/* Three-column body */}
+        <div className="grid grid-cols-3 gap-6 py-3 text-xs font-mono">
+          {/* ---- COLUMN 1: Text & Engine Configs ---- */}
           <div className="space-y-4">
             {/* Model */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <label className="text-muted-foreground uppercase tracking-wider">
-                  Classification Engine (Model)
+                <label className="text-muted-foreground uppercase tracking-wider font-bold">
+                  Text Engine (Model)
                 </label>
                 {isLoadingModels && (
                   <span className="flex items-center gap-1 text-[9px] text-muted-foreground">
@@ -190,11 +266,38 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               )}
             </div>
 
-            {/* Currency & Pricing — sub-grid */}
+            {/* Image Model */}
+            <div className="space-y-2 pt-2 border-t border-border/40">
+              <label className="text-muted-foreground uppercase tracking-wider font-bold">
+                Image Engine (Imagen)
+              </label>
+              <select
+                value={selectedImageModel}
+                onChange={(e) => setSelectedImageModel(e.target.value)}
+                className="w-full rounded border border-border bg-background p-2 text-foreground focus:outline-none focus:ring-1 focus:ring-ring font-sans text-xs uppercase cursor-pointer"
+              >
+                {imageModels.map((model) => (
+                  <option
+                    key={model.name}
+                    value={model.name}
+                    className="bg-card text-foreground text-xs font-sans"
+                  >
+                    {model.display_name}
+                  </option>
+                ))}
+              </select>
+              {imageModels.find((m) => m.name === selectedImageModel)?.description && (
+                <p className="text-[10px] text-muted-foreground leading-normal mt-1 font-sans">
+                  {imageModels.find((m) => m.name === selectedImageModel)?.description}
+                </p>
+              )}
+            </div>
+
+            {/* Currency & Language — sub-grid */}
             <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/40">
               {/* Currency */}
               <div className="space-y-2">
-                <div className="flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider">
+                <div className="flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider font-bold">
                   <Coins className="h-3 w-3" />
                   Currency
                 </div>
@@ -212,7 +315,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
               {/* Language */}
               <div className="space-y-2">
-                <div className="flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider">
+                <div className="flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider font-bold">
                   <Globe className="h-3 w-3" />
                   Language
                 </div>
@@ -237,9 +340,9 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
             {/* Pricing Strategy */}
             <div className="space-y-2 pt-2 border-t border-border/40">
-              <div className="flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider">
+              <div className="flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider font-bold">
                 <Landmark className="h-3 w-3" />
-                Pricing Strategy Profile
+                Pricing Strategy
               </div>
               <select
                 value={pricingStrategy}
@@ -256,51 +359,91 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   Premium Resale (Depop-style)
                 </option>
               </select>
-              <p className="text-[10px] text-muted-foreground leading-normal mt-1 font-sans">
-                {pricingStrategy === "vinted_frugal"
-                  ? "Optimizes pricing for price-sensitive buyers ($5 – $25 range)."
-                  : pricingStrategy === "standard_market"
-                  ? "Competitive market value based on condition and brand."
-                  : "Premium retail resale values (Depop / Grailed)."}
-              </p>
-            </div>
-
-            {/* Read-only info row */}
-            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/40">
-              <div className="space-y-2">
-                <label className="text-muted-foreground uppercase tracking-wider">
-                  Max Retries
-                </label>
-                <div className="rounded border border-border bg-background p-2 text-muted-foreground">
-                  2
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-muted-foreground uppercase tracking-wider">
-                  Output Schema
-                </label>
-                <div className="rounded border border-border bg-background p-2 text-muted-foreground">
-                  E-commerce Listing
-                </div>
-              </div>
             </div>
           </div>
 
-          {/* ---- RIGHT COLUMN: example output style guide ---- */}
+          {/* ---- COLUMN 2: Description Style Guide ---- */}
           <div className="flex flex-col space-y-2 border-l border-border/40 pl-6">
-            <div className="flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider">
+            <div className="flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider font-bold">
               <FileText className="h-3 w-3" />
-              Example Output (Style Guide)
+              Description Style Guide
             </div>
             <textarea
               value={exampleOutput}
               onChange={(e) => setExampleOutput(e.target.value)}
-              placeholder="Paste an example description that the AI should mimic in format and tone..."
-              className="flex-1 min-h-[200px] w-full rounded border border-border bg-background/50 p-2.5 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring font-sans text-xs leading-relaxed resize-none"
+              placeholder="Paste an example description that the AI should mimic in format, tone, and layout..."
+              className="flex-1 min-h-[220px] w-full rounded border border-border bg-background/50 p-2.5 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring font-sans text-xs leading-relaxed resize-none"
             />
             <p className="text-[10px] text-muted-foreground leading-normal font-sans">
               Provide a reference description. Generated listings will emulate its style, structure, and detail level. Leave blank for default style.
             </p>
+          </div>
+
+          {/* ---- COLUMN 3: Image Generation Prompt & Reference ---- */}
+          <div className="flex flex-col space-y-3 border-l border-border/40 pl-6">
+            {/* Image Prompt Template */}
+            <div className="space-y-2 flex-1 flex flex-col">
+              <div className="flex items-center gap-1.5 text-muted-foreground uppercase tracking-wider font-bold">
+                <ImageIcon className="h-3 w-3" />
+                Image Prompt Template
+              </div>
+              <textarea
+                value={imagePrompt}
+                onChange={(e) => setImagePrompt(e.target.value)}
+                placeholder="A professional studio photo of {title} on a light gray background..."
+                className="flex-1 min-h-[100px] w-full rounded border border-border bg-background/50 p-2.5 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring font-sans text-xs leading-relaxed resize-none"
+              />
+              <p className="text-[10px] text-muted-foreground leading-normal font-sans">
+                Use <code className="bg-muted px-1 rounded text-foreground font-mono">{`{title}`}</code> or <code className="bg-muted px-1 rounded text-foreground font-mono">{`{description}`}</code> to inject item data dynamically.
+              </p>
+            </div>
+
+            {/* Style Reference Image */}
+            <div className="space-y-2 pt-2 border-t border-border/40">
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-bold">
+                Image Style Reference
+              </div>
+              {imageStyleRef ? (
+                <div className="relative rounded border border-border bg-background/50 p-2 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imageStyleRef}
+                      alt="Style reference preview"
+                      className="h-10 w-10 object-cover rounded border border-border"
+                    />
+                    <span className="text-[10px] text-muted-foreground font-sans">
+                      Reference image configured
+                    </span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setImageStyleRef("")}
+                    className="h-7 w-7 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                    title="Remove style reference"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="relative rounded-lg border border-dashed border-border/50 bg-background/30 hover:bg-background/50 transition-colors p-3 flex flex-col items-center justify-center text-center">
+                  <Upload className="h-4 w-4 text-muted-foreground mb-1" />
+                  <label className="text-[10px] font-mono text-muted-foreground hover:text-foreground cursor-pointer uppercase font-bold">
+                    UPLOAD STYLE REF
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleStyleRefChange}
+                      className="hidden"
+                    />
+                  </label>
+                  <span className="text-[9px] text-muted-foreground/70 font-sans mt-0.5">
+                    JPEG/PNG. Auto-resized to fit.
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

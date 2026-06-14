@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import os
@@ -481,7 +482,7 @@ async def api_list_models(api_key: Optional[str] = None):
     """
     GET API handler for listing available models.
     If api_key is provided, dynamically list models supported by that key.
-    Otherwise, returns a default set of standard Gemini models.
+    Otherwise, returns a default set of standard Gemini and Imagen models.
     """
     default_models = [
         {
@@ -501,22 +502,50 @@ async def api_list_models(api_key: Optional[str] = None):
         },
     ]
 
+    default_image_models = [
+        {
+            "name": "imagen-4.0-generate-001",
+            "display_name": "Imagen 4 (Standard)",
+            "description": "Google's state-of-the-art Imagen 4 text-to-image generation model.",
+        },
+        {
+            "name": "imagen-4.0-fast-generate-001",
+            "display_name": "Imagen 4 Fast",
+            "description": "Optimized for speed and faster image generation.",
+        },
+        {
+            "name": "imagen-4.0-ultra-generate-001",
+            "display_name": "Imagen 4 Ultra",
+            "description": "Highest fidelity representation quality model.",
+        }
+    ]
+
     if not api_key or not api_key.strip():
-        return {"models": default_models}
+        return {"models": default_models, "image_models": default_image_models}
 
     try:
         client = genai.Client(api_key=api_key)
         models_list = client.models.list()
 
         supported = []
+        supported_image = []
         for model in models_list:
             actions = model.supported_actions or []
+            name = model.name or ""
+            # Strip models/ prefix
+            if name.startswith("models/"):
+                name = name[len("models/") :]
+
             if "generateContent" in actions:
-                name = model.name or ""
-                # Strip models/ prefix
-                if name.startswith("models/"):
-                    name = name[len("models/") :]
                 supported.append(
+                    {
+                        "name": name,
+                        "display_name": model.display_name or name,
+                        "description": model.description or "",
+                    }
+                )
+            if "generateImages" in actions or "imagen" in name.lower() or "image" in name.lower():
+                supported_image.append(
                     {
                         "name": name,
                         "display_name": model.display_name or name,
@@ -525,12 +554,15 @@ async def api_list_models(api_key: Optional[str] = None):
                 )
 
         if not supported:
-            return {"models": default_models}
-        return {"models": supported}
+            supported = default_models
+        if not supported_image:
+            supported_image = default_image_models
+
+        return {"models": supported, "image_models": supported_image}
 
     except Exception as e:
         print(f"[WARNING] Failed to fetch live models from Google: {str(e)}")
-        return {"models": default_models}
+        return {"models": default_models, "image_models": default_image_models}
 
 
 @app.post("/generate-listing", response_model=Listing)
@@ -671,4 +703,117 @@ async def api_generate_batch_listings(
             error_msg = error_msg.replace(api_key, "********")
         raise HTTPException(
             status_code=502, detail=f"Failed to process batch listings: {error_msg}"
+        )
+
+
+class ImageGenerationRequest(BaseModel):
+    api_key: str
+    model: str = "imagen-4.0-generate-001"
+    prompt_template: str
+    item_title: str
+    item_description: str
+    style_reference_base64: Optional[str] = None
+
+
+def decode_base64_image(base64_str: str) -> bytes:
+    if "," in base64_str:
+        base64_str = base64_str.split(",", 1)[1]
+    return base64.b64decode(base64_str)
+
+
+def describe_style_reference(image_bytes: bytes, api_key: str) -> str:
+    """
+    Uses Gemini to describe the photographic visual style of a reference image.
+    """
+    client = genai.Client(api_key=api_key)
+    prompt = (
+        "Analyze the aesthetic and photographic style of this image. Describe the following:\n"
+        "1. Lighting (e.g. soft studio lighting, harsh shadows, natural light)\n"
+        "2. Background (e.g. solid neutral color, texture, flat lay surface, outdoor context)\n"
+        "3. Composition and camera angle (e.g. top-down flat lay, front 45-degree angle, close-up details)\n"
+        "4. Vibe and color temperature (e.g. muted earth tones, minimalist, bright and clean)\n"
+        "Respond with a single concise paragraph. Focus strictly on photography style, do not describe the clothing item/subject."
+    )
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
+            ]
+        )
+        return response.text or ""
+    except Exception as e:
+        print(f"[WARNING] Failed to generate style reference description: {str(e)}")
+        return ""
+
+
+@app.post("/generate-image")
+async def api_generate_image(req: ImageGenerationRequest):
+    """
+    Endpoint to generate an e-commerce studio/styled cover image for a listing.
+    Optional style reference base64 image will be analyzed first by Gemini to guide Imagen.
+    """
+    if not req.api_key or not req.api_key.strip():
+        raise HTTPException(status_code=400, detail="Missing Gemini API Key.")
+
+    # 1. Analyze style reference image if provided
+    style_desc = ""
+    if req.style_reference_base64 and req.style_reference_base64.strip():
+        try:
+            style_bytes = decode_base64_image(req.style_reference_base64)
+            # Compress style image first to avoid token overhead
+            style_bytes = resize_and_convert_image(style_bytes)
+            style_desc = describe_style_reference(style_bytes, req.api_key)
+        except Exception as e:
+            print(f"[WARNING] Style reference image processing failed: {str(e)}")
+
+    # 2. Build Imagen prompt
+    prompt = req.prompt_template
+    # Replace templates placeholders
+    if "{title}" in prompt:
+        prompt = prompt.replace("{title}", req.item_title)
+    else:
+        prompt = f"{prompt}. Subject: {req.item_title}."
+
+    if "{description}" in prompt:
+        prompt = prompt.replace("{description}", req.item_description)
+
+    # Append style description if available
+    if style_desc:
+        prompt = f"{prompt} Replicate this photography style: {style_desc}"
+
+    # 3. Call Imagen 3 model via google-genai SDK
+    try:
+        client = genai.Client(api_key=req.api_key)
+        
+        response = client.models.generate_images(
+            model=req.model,
+            prompt=prompt,
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio="1:1",
+                output_mime_type="image/jpeg"
+            )
+        )
+
+        if not response.generated_images:
+            raise ValueError("No images generated by Gemini API.")
+
+        generated_image = response.generated_images[0]
+        if not generated_image.image or not generated_image.image.image_bytes:
+            raise ValueError("Generated image data is missing or empty.")
+
+        # Encode generated image back to base64 data url for direct use in browser
+        img_b64 = base64.b64encode(generated_image.image.image_bytes).decode("utf-8")
+        image_data_url = f"data:image/jpeg;base64,{img_b64}"
+
+        return {"image_url": image_data_url}
+
+    except Exception as e:
+        error_msg = str(e)
+        if req.api_key in error_msg:
+            error_msg = error_msg.replace(req.api_key, "********")
+        raise HTTPException(
+            status_code=502, detail=f"Failed to generate representation image: {error_msg}"
         )

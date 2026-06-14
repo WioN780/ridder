@@ -7,7 +7,7 @@ import { SettingsDialog } from "@/components/SettingsDialog";
 import { UploadZone } from "@/components/UploadZone";
 import { LotGrid } from "@/components/LotGrid";
 import { Button } from "@/components/ui/button";
-import { getApiKey, getModel, getCurrency, getPricingStrategy, getLanguage, getExampleOutput } from "@/lib/api-key";
+import { getApiKey, getModel, getCurrency, getPricingStrategy, getLanguage, getExampleOutput, getImageModel, getImagePrompt, getImageStyleRef } from "@/lib/api-key";
 import {
   Dialog,
   DialogContent,
@@ -74,13 +74,23 @@ export default function Home() {
   const [language, setLanguage] = useState("English");
   const [exampleOutput, setExampleOutput] = useState("");
 
+  // Image Generation States
+  const [imageModel, setImageModel] = useState("imagen-4.0-generate-001");
+  const [imagePrompt, setImagePrompt] = useState("");
+  const [imageStyleRef, setImageStyleRef] = useState("");
+
   // Centralized Listing States
   const [listings, setListings] = useState<Record<string, Listing>>({});
   const [loadingLots, setLoadingLots] = useState<Record<string, boolean>>({});
   const [errorLots, setErrorLots] = useState<Record<string, string | null>>({});
 
+  // Image Generation runtime states
+  const [generatedImages, setGeneratedImages] = useState<Record<string, string>>({});
+  const [loadingImages, setLoadingImages] = useState<Record<string, boolean>>({});
+  const [errorImages, setErrorImages] = useState<Record<string, string | null>>({});
+
   // Board State History for Undo
-  const [history, setHistory] = useState<{ lots: ImageLot[]; listings: Record<string, Listing> }[]>([]);
+  const [history, setHistory] = useState<{ lots: ImageLot[]; listings: Record<string, Listing>; generatedImages?: Record<string, string> }[]>([]);
 
   // Batch Processing States
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
@@ -97,6 +107,9 @@ export default function Home() {
     const savedStrategy = getPricingStrategy();
     const savedLanguage = getLanguage();
     const savedExampleOutput = getExampleOutput();
+    const savedImageModel = getImageModel();
+    const savedImagePrompt = getImagePrompt();
+    const savedImageStyleRef = getImageStyleRef();
 
     setTimeout(() => {
       setApiKey(savedKey || null);
@@ -104,6 +117,9 @@ export default function Home() {
       setPricingStrategy(savedStrategy);
       setLanguage(savedLanguage);
       setExampleOutput(savedExampleOutput);
+      setImageModel(savedImageModel);
+      setImagePrompt(savedImagePrompt);
+      setImageStyleRef(savedImageStyleRef);
       if (!savedKey) {
         setActiveModel(savedModel || "gemini-2.5-flash");
       }
@@ -215,6 +231,75 @@ export default function Home() {
     }
   }, [lots, apiKey, activeModel, currency, pricingStrategy, language, exampleOutput]);
 
+  // Generate cover representation image for a lot using Imagen
+  const generateLotImage = useCallback(async (lotId: string) => {
+    const lot = lots.find((l) => l.id === lotId);
+    if (!lot) return;
+
+    const listing = listings[lotId];
+    if (!listing) {
+      setErrorImages((prev) => ({
+        ...prev,
+        [lotId]: "Please generate the listing first so the image can represent the item accurately.",
+      }));
+      return;
+    }
+
+    if (!apiKey) {
+      setErrorImages((prev) => ({
+        ...prev,
+        [lotId]: "API KEY ERROR: Please enter your Gemini API Key in Settings.",
+      }));
+      return;
+    }
+
+    setLoadingImages((prev) => ({ ...prev, [lotId]: true }));
+    setErrorImages((prev) => ({ ...prev, [lotId]: null }));
+
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const res = await fetch(`${baseUrl}/generate-image`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          api_key: apiKey,
+          model: imageModel,
+          prompt_template: imagePrompt,
+          item_title: listing.title,
+          item_description: listing.description,
+          style_reference_base64: imageStyleRef || null,
+        }),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => "");
+        throw new Error(errorText || `Server returned status ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (!data.image_url) {
+        throw new Error("No image URL returned from generation endpoint.");
+      }
+
+      setGeneratedImages((prev) => ({
+        ...prev,
+        [lotId]: data.image_url,
+      }));
+    } catch (err: unknown) {
+      const errorObj = err as Error;
+      console.error("Image generation failed:", errorObj);
+      setErrorImages((prev) => ({
+        ...prev,
+        [lotId]: errorObj.message || "An unexpected error occurred during image generation.",
+      }));
+    } finally {
+      setLoadingImages((prev) => ({ ...prev, [lotId]: false }));
+    }
+  }, [lots, listings, apiKey, imageModel, imagePrompt, imageStyleRef]);
+
+
   // Joint visual clustering & listing generation in a single pass (Advanced AI Batch)
   const generateBatchListings = useCallback(async () => {
     if (files.length === 0) return;
@@ -320,8 +405,11 @@ export default function Home() {
       if (prevState) {
         setLots(prevState.lots);
         setListings(prevState.listings);
+        setGeneratedImages(prevState.generatedImages || {});
         setLoadingLots({});
         setErrorLots({});
+        setLoadingImages({});
+        setErrorImages({});
       }
       return nextHistory;
     });
@@ -330,17 +418,22 @@ export default function Home() {
   // State-clearing handlers for Lot modifications
   const handleMerge = useCallback((lotId: string) => {
     // 1. Save history before state change
-    setHistory((prev) => [...prev, { lots, listings }]);
+    setHistory((prev) => [...prev, { lots, listings, generatedImages }]);
 
     // 2. Shift listings indices for unaffected lots
     const idx = lots.findIndex((l) => l.id === lotId);
     if (idx <= 0) return;
 
     const newListings: Record<string, Listing> = {};
+    const newGeneratedImages: Record<string, string> = {};
+
     for (let i = 0; i < idx - 1; i++) {
       const oldId = `lot-${i + 1}`;
       if (listings[oldId]) {
         newListings[oldId] = listings[oldId];
+      }
+      if (generatedImages[oldId]) {
+        newGeneratedImages[oldId] = generatedImages[oldId];
       }
     }
     for (let i = idx + 1; i < lots.length; i++) {
@@ -349,27 +442,38 @@ export default function Home() {
       if (listings[oldId]) {
         newListings[newId] = listings[oldId];
       }
+      if (generatedImages[oldId]) {
+        newGeneratedImages[newId] = generatedImages[oldId];
+      }
     }
 
     mergeLot(lotId);
     setListings(newListings);
+    setGeneratedImages(newGeneratedImages);
     setLoadingLots({});
     setErrorLots({});
-  }, [lots, listings, mergeLot]);
+    setLoadingImages({});
+    setErrorImages({});
+  }, [lots, listings, generatedImages, mergeLot]);
 
   const handleSplit = useCallback((lotId: string, imageId: string) => {
     // 1. Save history before state change
-    setHistory((prev) => [...prev, { lots, listings }]);
+    setHistory((prev) => [...prev, { lots, listings, generatedImages }]);
 
     // 2. Shift listings indices for unaffected lots
     const idx = lots.findIndex((l) => l.id === lotId);
     if (idx === -1) return;
 
     const newListings: Record<string, Listing> = {};
+    const newGeneratedImages: Record<string, string> = {};
+
     for (let i = 0; i < idx; i++) {
       const oldId = `lot-${i + 1}`;
       if (listings[oldId]) {
         newListings[oldId] = listings[oldId];
+      }
+      if (generatedImages[oldId]) {
+        newGeneratedImages[oldId] = generatedImages[oldId];
       }
     }
     for (let i = idx + 1; i < lots.length; i++) {
@@ -378,22 +482,32 @@ export default function Home() {
       if (listings[oldId]) {
         newListings[newId] = listings[oldId];
       }
+      if (generatedImages[oldId]) {
+        newGeneratedImages[newId] = generatedImages[oldId];
+      }
     }
 
     splitLot(lotId, imageId);
     setListings(newListings);
+    setGeneratedImages(newGeneratedImages);
     setLoadingLots({});
     setErrorLots({});
-  }, [lots, listings, splitLot]);
+    setLoadingImages({});
+    setErrorImages({});
+  }, [lots, listings, generatedImages, splitLot]);
 
   const handleClearAll = useCallback(() => {
-    setHistory((prev) => [...prev, { lots, listings }]);
+    setHistory((prev) => [...prev, { lots, listings, generatedImages }]);
     clearAll();
     setListings({});
+    setGeneratedImages({});
     setLoadingLots({});
     setErrorLots({});
+    setLoadingImages({});
+    setErrorImages({});
     setAiError(null);
-  }, [lots, listings, clearAll]);
+  }, [lots, listings, generatedImages, clearAll]);
+
 
   const isActionBlocked = !apiKey;
   const isAnyProcessing = isProcessing || isBatchProcessing;
@@ -758,6 +872,10 @@ export default function Home() {
                 onGenerate={generateLotListing}
                 onRegenerate={() => {}}
                 currency={currency}
+                generatedImages={generatedImages}
+                loadingImages={loadingImages}
+                errorImages={errorImages}
+                onGenerateImage={generateLotImage}
               />
             </div>
           </div>

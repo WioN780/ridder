@@ -45,3 +45,25 @@ export function getExampleOutput(): string {
   }
   return localStorage.getItem("ridder_example_output") || "";
 }
+
+export function getImageModel(): string {
+  if (typeof window === "undefined") {
+    return "imagen-4.0-generate-001";
+  }
+  return localStorage.getItem("ridder_image_model") || "imagen-4.0-generate-001";
+}
+
+export function getImagePrompt(): string {
+  if (typeof window === "undefined") {
+    return "A professional studio product shot, clean flat lay of the item, solid light grey background, soft studio lighting, commercial fashion photography, high detail, sharp focus.";
+  }
+  return localStorage.getItem("ridder_image_prompt") || "A professional studio product shot, clean flat lay of the item, solid light grey background, soft studio lighting, commercial fashion photography, high detail, sharp focus.";
+}
+
+export function getImageStyleRef(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return localStorage.getItem("ridder_image_style_ref") || "";
+}
+

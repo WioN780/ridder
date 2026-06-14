@@ -40,6 +40,10 @@ interface LotCardProps {
   onGenerate: (lotId: string) => void;
   onSelectImage: (image: UploadedImage) => void;
   currency?: string;
+  generatedImage?: string | null;
+  isImageLoading?: boolean;
+  imageError?: string | null;
+  onGenerateImage?: (lotId: string) => void;
 }
 
 export const LotCard = React.memo(function LotCard({
@@ -53,8 +57,13 @@ export const LotCard = React.memo(function LotCard({
   onGenerate,
   onSelectImage,
   currency = "USD",
+  generatedImage = null,
+  isImageLoading = false,
+  imageError = null,
+  onGenerateImage = () => {},
 }: LotCardProps) {
   const [descCopied, setDescCopied] = useState(false);
+
 
   const handleCopyDescription = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -104,6 +113,7 @@ export const LotCard = React.memo(function LotCard({
 
   // Carousel State
   const [carouselIdx, setCarouselIdx] = useState(0);
+  const [activeTab, setActiveTab] = useState<"original" | "ai_cover">("original");
 
   // Editable Form Fields
   const [editedTitle, setEditedTitle] = useState("");
@@ -229,50 +239,140 @@ export const LotCard = React.memo(function LotCard({
         {listing ? (
           /* Split View Layout */
           <div className="grid grid-cols-1 md:grid-cols-2 border-t border-border/40 divide-y md:divide-y-0 md:divide-x divide-border/40">
-            {/* LEFT: Image Carousel */}
-            <div className="flex flex-col items-center justify-center p-6 bg-black/10 relative group/carousel aspect-square md:aspect-auto md:h-auto min-h-[300px]">
-              {lot.images.length > 0 && (
-                <div className="relative w-full h-full flex items-center justify-center">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={lot.images[carouselIdx].url}
-                    alt={lot.images[carouselIdx].name}
-                    className="max-h-[350px] max-w-full object-contain rounded border border-border/30 bg-background"
-                  />
+            {/* LEFT: Tabbed Image Preview (Original Photos vs. AI Cover Image) */}
+            <div className="flex flex-col border-r border-border/40 bg-black/5 aspect-square md:aspect-auto md:h-auto min-h-[300px]">
+              {/* Tab Header */}
+              <div className="flex border-b border-border/40 text-[10px] font-mono uppercase bg-card/25 tracking-wider">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("original")}
+                  className={`flex-1 py-2 text-center transition-colors cursor-pointer border-b ${
+                    activeTab === "original"
+                      ? "border-primary text-foreground bg-primary/5 font-semibold"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  Original Photos ({lot.images.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("ai_cover")}
+                  className={`flex-1 py-2 text-center transition-colors cursor-pointer border-b ${
+                    activeTab === "ai_cover"
+                      ? "border-primary text-foreground bg-primary/5 font-semibold"
+                      : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  AI Cover Image
+                </button>
+              </div>
 
-                  {/* Prev/Next Controls */}
-                  {lot.images.length > 1 && (
-                    <>
-                      <button
-                        onClick={handlePrevImage}
-                        className="absolute left-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card/80 hover:bg-card text-foreground transition-all opacity-0 group-hover/carousel:opacity-100 cursor-pointer"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={handleNextImage}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card/80 hover:bg-card text-foreground transition-all opacity-0 group-hover/carousel:opacity-100 cursor-pointer"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
+              {/* Tab Content */}
+              <div className="flex-1 flex flex-col items-center justify-center p-6 relative group/carousel">
+                {activeTab === "original" ? (
+                  lot.images.length > 0 && (
+                    <div className="relative w-full h-full flex items-center justify-center">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={lot.images[carouselIdx].url}
+                        alt={lot.images[carouselIdx].name}
+                        className="max-h-[350px] max-w-full object-contain rounded border border-border/30 bg-background"
+                      />
 
-                      {/* Dot indicators */}
-                      <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
-                        {lot.images.map((_, i) => (
-                          <span
-                            key={i}
-                            className={`h-1.5 w-1.5 rounded-full transition-all ${
-                              i === carouselIdx
-                                ? "bg-foreground w-3"
-                                : "bg-muted-foreground/35"
-                            }`}
-                          />
-                        ))}
+                      {/* Prev/Next Controls */}
+                      {lot.images.length > 1 && (
+                        <>
+                          <button
+                            onClick={handlePrevImage}
+                            className="absolute left-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card/80 hover:bg-card text-foreground transition-all opacity-0 group-hover/carousel:opacity-100 cursor-pointer"
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={handleNextImage}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card/80 hover:bg-card text-foreground transition-all opacity-0 group-hover/carousel:opacity-100 cursor-pointer"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+
+                          {/* Dot indicators */}
+                          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+                            {lot.images.map((_, i) => (
+                              <span
+                                key={i}
+                                className={`h-1.5 w-1.5 rounded-full transition-all ${
+                                  i === carouselIdx
+                                    ? "bg-foreground w-3"
+                                    : "bg-muted-foreground/35"
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )
+                ) : (
+                  /* AI Cover Image Tab */
+                  <div className="w-full h-full flex flex-col items-center justify-center space-y-4">
+                    {isImageLoading ? (
+                      <div className="flex flex-col items-center justify-center space-y-2 font-mono text-muted-foreground">
+                        <Loader2 className="h-6 w-6 animate-spin text-foreground" />
+                        <span className="text-[10px] uppercase animate-pulse">GENERATING COVER...</span>
                       </div>
-                    </>
-                  )}
-                </div>
-              )}
+                    ) : generatedImage ? (
+                      <div className="relative w-full h-full flex items-center justify-center group/ai-image">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={generatedImage}
+                          alt="AI Generated Cover representation"
+                          className="max-h-[350px] max-w-full object-contain rounded border border-border/30 bg-background"
+                        />
+                        {/* Regenerate overlay button */}
+                        <div className="absolute inset-0 bg-black/45 opacity-0 group-hover/ai-image:opacity-100 transition-opacity flex items-center justify-center rounded">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => onGenerateImage(lot.id)}
+                            className="h-8 font-mono text-xs"
+                          >
+                            <Sparkles className="mr-1 h-3 w-3" />
+                            REGENERATE COVER
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Placeholder empty state for AI Image */
+                      <div className="text-center p-6 space-y-3 font-mono">
+                        <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border border-dashed border-border bg-card/60 text-muted-foreground">
+                          <ImageIcon className="h-4 w-4" />
+                        </div>
+                        <div className="space-y-1">
+                          <h4 className="text-[10px] font-bold uppercase tracking-wider text-foreground">
+                            No AI cover generated
+                          </h4>
+                          <p className="text-[9px] text-muted-foreground max-w-xs mx-auto leading-relaxed">
+                            Generate a clean, styled studio presentation cover image using your configured prompt template.
+                          </p>
+                        </div>
+                        {imageError && (
+                          <div className="text-xxs text-destructive uppercase tracking-wide border border-destructive/20 bg-destructive/5 p-2 rounded max-w-xs mx-auto leading-normal">
+                            {imageError}
+                          </div>
+                        )}
+                        <Button
+                          size="sm"
+                          onClick={() => onGenerateImage(lot.id)}
+                          className="h-7 text-[10px] font-mono uppercase bg-primary text-primary-foreground hover:opacity-90"
+                        >
+                          <Sparkles className="mr-1 h-3 w-3" />
+                          Generate Cover
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* RIGHT: Editable Form Fields */}
