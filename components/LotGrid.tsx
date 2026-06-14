@@ -27,9 +27,13 @@ interface LotGridProps {
   onGenerate: (lotId: string) => void;
   onRegenerate: () => void;
   currency?: string;
+  generatedImages?: Record<string, string>;
+  loadingImages?: Record<string, boolean>;
+  errorImages?: Record<string, string | null>;
+  onGenerateImage?: (lotId: string) => void;
 }
 
-export function LotGrid({
+export const LotGrid = React.memo(function LotGrid({
   lots,
   listings,
   loadingLots,
@@ -38,6 +42,10 @@ export function LotGrid({
   onSplit,
   onGenerate,
   currency = "USD",
+  generatedImages = {},
+  loadingImages = {},
+  errorImages = {},
+  onGenerateImage = () => {},
 }: LotGridProps) {
   const [selectedImage, setSelectedImage] = useState<UploadedImage | null>(
     null,
@@ -75,6 +83,10 @@ export function LotGrid({
           onGenerate={onGenerate}
           onSelectImage={setSelectedImage}
           currency={currency}
+          generatedImage={generatedImages[lot.id] || null}
+          isImageLoading={loadingImages[lot.id] || false}
+          imageError={errorImages[lot.id] || null}
+          onGenerateImage={onGenerateImage}
         />
       ))}
 
@@ -165,4 +177,4 @@ export function LotGrid({
       </Dialog>
     </div>
   );
-}
+});

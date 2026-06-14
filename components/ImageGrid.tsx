@@ -1,14 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
-import Image from "next/image";
 import { UploadedImage } from "@/hooks/use-mock-grouping";
 import { Info, Maximize2, Trash2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
-  DialogHeader,
-  DialogTitle,
 } from "@/components/ui/dialog";
 
 interface ImageGridProps {

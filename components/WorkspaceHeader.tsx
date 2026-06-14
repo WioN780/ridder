@@ -15,7 +15,7 @@ export function WorkspaceHeader({ onOpenSettings }: WorkspaceHeaderProps) {
             RIDDER
           </span>
           <span className="inline-flex items-center rounded-full border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-medium font-mono text-muted-foreground">
-            v0.1.1-alpha
+            v0.2.0
           </span>
         </div>
 
