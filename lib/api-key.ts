@@ -31,3 +31,17 @@ export function getPricingStrategy(): string {
   }
   return localStorage.getItem("ridder_pricing_strategy") || "vinted_frugal";
 }
+
+export function getLanguage(): string {
+  if (typeof window === "undefined") {
+    return "English";
+  }
+  return localStorage.getItem("ridder_language") || "English";
+}
+
+export function getExampleOutput(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return localStorage.getItem("ridder_example_output") || "";
+}

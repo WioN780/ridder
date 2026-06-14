@@ -210,6 +210,8 @@ def generate_listing(
     model: str = "gemini-2.5-flash",
     currency: str = "USD",
     pricing_strategy: str = "vinted_frugal",
+    language: str = "English",
+    example_output: Optional[str] = None,
 ) -> Listing:
     """
     Generates a structured secondhand clothing listing from a list of image bytes
@@ -236,11 +238,23 @@ def generate_listing(
             f"PRICING STRATEGY: Standard Secondhand. Estimate fair, competitive secondhand market value based on item condition and brand."
         )
 
+    language_instruction = f"All text values in the JSON response (such as title, description, condition, measurements dictionary keys/values, and tags) MUST be written in {language}."
+
+    example_instruction = ""
+    if example_output and example_output.strip():
+        example_instruction = (
+            f"Here is an example of the desired description style and format. "
+            f"You should model your generated 'description' after this example, matching its tone, structure, and detail level:\n"
+            f"=== EXAMPLE DESCRIPTION ===\n{example_output.strip()}\n===========================\n"
+        )
+
     prompt = (
         "You are an expert secondhand clothing appraiser and e-commerce copywriter. "
         "Analyze the uploaded images of this clothing item and generate a structured product listing. "
         f"Generate all pricing in {currency}. "
         f"{pricing_instruction} "
+        f"{language_instruction} "
+        f"{example_instruction} "
         "You must respond with strictly valid JSON matching the schema. "
         "Do NOT wrap the output in markdown code fences (do not use ```json or ```). "
         "Do NOT provide any preamble, explanation, or trailing text. "
@@ -363,6 +377,8 @@ def generate_batch_listings_ai(
     model: str = "gemini-2.5-flash",
     currency: str = "USD",
     pricing_strategy: str = "vinted_frugal",
+    language: str = "English",
+    example_output: Optional[str] = None,
 ) -> BatchListingResponse:
     """
     Groups and generates listings for a flat batch of uploaded clothing images in a single call.
@@ -387,6 +403,16 @@ def generate_batch_listings_ai(
             f"PRICING STRATEGY: Standard Secondhand. Estimate fair, competitive secondhand market value based on item condition and brand."
         )
 
+    language_instruction = f"All text values in the JSON response (such as title, description, condition, measurements dictionary keys/values, and tags) for each item MUST be written in {language}."
+
+    example_instruction = ""
+    if example_output and example_output.strip():
+        example_instruction = (
+            f"Here is an example of the desired description style and format. "
+            f"For each identified item, you should model its generated 'description' after this example, matching its tone, structure, and detail level:\n"
+            f"=== EXAMPLE DESCRIPTION ===\n{example_output.strip()}\n===========================\n"
+        )
+
     prompt = (
         "You are an expert secondhand fashion inventory appraiser. Analyze this flat batch of images. "
         "Some images are different angles or details (front, back, label, size tag) of the same physical item. "
@@ -396,6 +422,8 @@ def generate_batch_listings_ai(
         "3. Generate a structured e-commerce listing for each item.\n"
         f"Generate all pricing in {currency}.\n"
         f"{pricing_instruction}\n"
+        f"{language_instruction}\n"
+        f"{example_instruction}\n"
         "You must respond with strictly valid JSON matching the schema, and list the filenames "
         "that belong to each item. Do NOT use markdown code fences. Respond with raw JSON only."
     )
@@ -512,6 +540,8 @@ async def api_generate_listing(
     model: str = Form("gemini-2.5-flash"),
     currency: str = Form("USD"),
     pricing_strategy: str = Form("vinted_frugal"),
+    language: str = Form("English"),
+    example_output: Optional[str] = Form(None),
 ):
     """
     POST API handler for generating product listings.
@@ -542,6 +572,8 @@ async def api_generate_listing(
             model=model,
             currency=currency,
             pricing_strategy=pricing_strategy,
+            language=language,
+            example_output=example_output,
         )
         return result
     except Exception as e:
@@ -599,6 +631,8 @@ async def api_generate_batch_listings(
     model: str = Form("gemini-2.5-flash"),
     currency: str = Form("USD"),
     pricing_strategy: str = Form("vinted_frugal"),
+    language: str = Form("English"),
+    example_output: Optional[str] = Form(None),
 ):
     """
     POST API endpoint for joint visual clustering and listing generation in a single pass.
@@ -627,6 +661,8 @@ async def api_generate_batch_listings(
             model=model,
             currency=currency,
             pricing_strategy=pricing_strategy,
+            language=language,
+            example_output=example_output,
         )
         return result
     except Exception as e:

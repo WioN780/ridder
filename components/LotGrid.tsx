@@ -29,7 +29,7 @@ interface LotGridProps {
   currency?: string;
 }
 
-export function LotGrid({
+export const LotGrid = React.memo(function LotGrid({
   lots,
   listings,
   loadingLots,
@@ -165,4 +165,4 @@ export function LotGrid({
       </Dialog>
     </div>
   );
-}
+});

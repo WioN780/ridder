@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useMockGrouping, ImageLot } from "@/hooks/use-mock-grouping";
 import { WorkspaceHeader } from "@/components/WorkspaceHeader";
 import { SettingsDialog } from "@/components/SettingsDialog";
 import { UploadZone } from "@/components/UploadZone";
 import { LotGrid } from "@/components/LotGrid";
 import { Button } from "@/components/ui/button";
-import { getApiKey, getModel, getCurrency, getPricingStrategy } from "@/lib/api-key";
+import { getApiKey, getModel, getCurrency, getPricingStrategy, getLanguage, getExampleOutput } from "@/lib/api-key";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +23,7 @@ import {
   ClipboardList,
   Sparkles,
   AlertCircle,
+  Undo2,
 } from "lucide-react";
 
 interface Listing {
@@ -34,6 +35,18 @@ interface Listing {
   price?: number;
   description: string;
   tags: string[];
+}
+
+interface ResponseBatchItem {
+  title: string;
+  brand?: string;
+  size?: string;
+  condition: string;
+  measurements: Record<string, string>;
+  price?: number;
+  description: string;
+  tags: string[];
+  filenames: string[];
 }
 
 export default function Home() {
@@ -58,11 +71,16 @@ export default function Home() {
   const [activeModel, setActiveModel] = useState("gemini-2.5-flash");
   const [currency, setCurrency] = useState("USD");
   const [pricingStrategy, setPricingStrategy] = useState("vinted_frugal");
+  const [language, setLanguage] = useState("English");
+  const [exampleOutput, setExampleOutput] = useState("");
 
   // Centralized Listing States
   const [listings, setListings] = useState<Record<string, Listing>>({});
   const [loadingLots, setLoadingLots] = useState<Record<string, boolean>>({});
   const [errorLots, setErrorLots] = useState<Record<string, string | null>>({});
+
+  // Board State History for Undo
+  const [history, setHistory] = useState<{ lots: ImageLot[]; listings: Record<string, Listing> }[]>([]);
 
   // Batch Processing States
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
@@ -73,14 +91,23 @@ export default function Home() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const savedKey = localStorage.getItem("ridder_gemini_api_key") || "";
-    const savedModel = localStorage.getItem("ridder_gemini_model") || "";
-    setApiKey(savedKey || null);
+    const savedKey = getApiKey() || "";
+    const savedModel = getModel() || "";
+    const savedCurrency = getCurrency();
+    const savedStrategy = getPricingStrategy();
+    const savedLanguage = getLanguage();
+    const savedExampleOutput = getExampleOutput();
 
-    const savedCurrency = localStorage.getItem("ridder_currency") || "USD";
-    const savedStrategy = localStorage.getItem("ridder_pricing_strategy") || "vinted_frugal";
-    setCurrency(savedCurrency);
-    setPricingStrategy(savedStrategy);
+    setTimeout(() => {
+      setApiKey(savedKey || null);
+      setCurrency(savedCurrency);
+      setPricingStrategy(savedStrategy);
+      setLanguage(savedLanguage);
+      setExampleOutput(savedExampleOutput);
+      if (!savedKey) {
+        setActiveModel(savedModel || "gemini-2.5-flash");
+      }
+    }, 0);
 
     const initializeModels = async () => {
       try {
@@ -121,13 +148,11 @@ export default function Home() {
 
     if (savedKey) {
       initializeModels();
-    } else {
-      setActiveModel(savedModel || "gemini-2.5-flash");
     }
   }, [isSettingsOpen]);
 
   // Generate listing for a single Lot
-  const generateLotListing = async (lotId: string) => {
+  const generateLotListing = useCallback(async (lotId: string) => {
     const lot = lots.find((l) => l.id === lotId);
     if (!lot) return;
 
@@ -155,6 +180,10 @@ export default function Home() {
     formData.append("model", activeModel);
     formData.append("currency", currency);
     formData.append("pricing_strategy", pricingStrategy);
+    formData.append("language", language);
+    if (exampleOutput && exampleOutput.trim()) {
+      formData.append("example_output", exampleOutput.trim());
+    }
 
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -173,20 +202,21 @@ export default function Home() {
 
       const data = await response.json();
       setListings((prev) => ({ ...prev, [lotId]: data }));
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorObj = err as Error;
       const msg =
-        err.name === "TypeError" && err.message.includes("fetch")
+        errorObj.name === "TypeError" && errorObj.message.includes("fetch")
           ? `NETWORK ERROR: FAILED TO CONNECT TO FASTAPI BACKEND AT ${baseUrl}.`
-          : err.message || "AN UNEXPECTED ERROR OCCURRED.";
+          : errorObj.message || "AN UNEXPECTED ERROR OCCURRED.";
       setErrorLots((prev) => ({ ...prev, [lotId]: msg }));
       throw err;
     } finally {
       setLoadingLots((prev) => ({ ...prev, [lotId]: false }));
     }
-  };
+  }, [lots, apiKey, activeModel, currency, pricingStrategy, language, exampleOutput]);
 
   // Joint visual clustering & listing generation in a single pass (Advanced AI Batch)
-  const generateBatchListings = async () => {
+  const generateBatchListings = useCallback(async () => {
     if (files.length === 0) return;
 
     if (!apiKey) {
@@ -210,6 +240,10 @@ export default function Home() {
     formData.append("model", activeModel);
     formData.append("currency", currency);
     formData.append("pricing_strategy", pricingStrategy);
+    formData.append("language", language);
+    if (exampleOutput && exampleOutput.trim()) {
+      formData.append("example_output", exampleOutput.trim());
+    }
 
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -232,7 +266,7 @@ export default function Home() {
       const data = await response.json(); // Schema: { items: BatchItem[] }
 
       const newListings: Record<string, Listing> = {};
-      const newLots: ImageLot[] = data.items.map((item: any, index: number) => {
+      const newLots: ImageLot[] = data.items.map((item: ResponseBatchItem, index: number) => {
         const lotId = `lot-${index + 1}`;
 
         const matchedFiles = item.filenames
@@ -265,42 +299,146 @@ export default function Home() {
 
       setLots(newLots);
       setListings(newListings);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errorObj = err as Error;
       const msg =
-        err.name === "TypeError" && err.message.includes("fetch")
+        errorObj.name === "TypeError" && errorObj.message.includes("fetch")
           ? `NETWORK ERROR: CANNOT CONNECT TO BACKEND AT ${baseUrl}.`
-          : err.message || "AI BATCH PROCESS FAILED.";
+          : errorObj.message || "AI BATCH PROCESS FAILED.";
       setAiError(msg);
     } finally {
       setIsBatchProcessing(false);
     }
-  };
+  }, [files, apiKey, activeModel, currency, pricingStrategy, language, exampleOutput, imageMap, setLots]);
+
+  // Board State History for Undo
+  const handleUndo = useCallback(() => {
+    setHistory((prev) => {
+      if (prev.length === 0) return prev;
+      const nextHistory = [...prev];
+      const prevState = nextHistory.pop();
+      if (prevState) {
+        setLots(prevState.lots);
+        setListings(prevState.listings);
+        setLoadingLots({});
+        setErrorLots({});
+      }
+      return nextHistory;
+    });
+  }, [setLots]);
 
   // State-clearing handlers for Lot modifications
-  const handleMerge = (lotId: string) => {
+  const handleMerge = useCallback((lotId: string) => {
+    // 1. Save history before state change
+    setHistory((prev) => [...prev, { lots, listings }]);
+
+    // 2. Shift listings indices for unaffected lots
+    const idx = lots.findIndex((l) => l.id === lotId);
+    if (idx <= 0) return;
+
+    const newListings: Record<string, Listing> = {};
+    for (let i = 0; i < idx - 1; i++) {
+      const oldId = `lot-${i + 1}`;
+      if (listings[oldId]) {
+        newListings[oldId] = listings[oldId];
+      }
+    }
+    for (let i = idx + 1; i < lots.length; i++) {
+      const oldId = `lot-${i + 1}`;
+      const newId = `lot-${i}`;
+      if (listings[oldId]) {
+        newListings[newId] = listings[oldId];
+      }
+    }
+
     mergeLot(lotId);
-    setListings({});
+    setListings(newListings);
     setLoadingLots({});
     setErrorLots({});
-  };
+  }, [lots, listings, mergeLot]);
 
-  const handleSplit = (lotId: string, imageId: string) => {
+  const handleSplit = useCallback((lotId: string, imageId: string) => {
+    // 1. Save history before state change
+    setHistory((prev) => [...prev, { lots, listings }]);
+
+    // 2. Shift listings indices for unaffected lots
+    const idx = lots.findIndex((l) => l.id === lotId);
+    if (idx === -1) return;
+
+    const newListings: Record<string, Listing> = {};
+    for (let i = 0; i < idx; i++) {
+      const oldId = `lot-${i + 1}`;
+      if (listings[oldId]) {
+        newListings[oldId] = listings[oldId];
+      }
+    }
+    for (let i = idx + 1; i < lots.length; i++) {
+      const oldId = `lot-${i + 1}`;
+      const newId = `lot-${i + 2}`;
+      if (listings[oldId]) {
+        newListings[newId] = listings[oldId];
+      }
+    }
+
     splitLot(lotId, imageId);
-    setListings({});
+    setListings(newListings);
     setLoadingLots({});
     setErrorLots({});
-  };
+  }, [lots, listings, splitLot]);
 
-  const handleClearAll = () => {
+  const handleClearAll = useCallback(() => {
+    setHistory((prev) => [...prev, { lots, listings }]);
     clearAll();
     setListings({});
     setLoadingLots({});
     setErrorLots({});
     setAiError(null);
-  };
+  }, [lots, listings, clearAll]);
 
   const isActionBlocked = !apiKey;
   const isAnyProcessing = isProcessing || isBatchProcessing;
+
+  // Memoize flat assets grid to prevent lag during parent state updates (e.g. settings changes)
+  const unallocatedImagesGrid = useMemo(() => {
+    if (images.length === 0) return null;
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2 px-1">
+          <Layers className="h-4 w-4 text-muted-foreground" />
+          <span className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">
+            INGESTED FLAT ASSETS (UNALLOCATED)
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+          {images.map((image) => (
+            <div
+              key={image.id}
+              className="group relative flex flex-col overflow-hidden rounded border border-border/40 bg-card/10 hover:bg-card/20 transition-all duration-200"
+            >
+              <div className="aspect-square w-full overflow-hidden bg-black/5 relative">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={image.url}
+                  alt={image.name}
+                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                  loading="lazy"
+                />
+              </div>
+              <div className="p-2 border-t border-border/30 bg-card/40 flex flex-col justify-between flex-1 min-h-[50px]">
+                <div className="truncate text-xxs font-mono text-foreground font-semibold" title={image.name}>
+                  {image.name}
+                </div>
+                <div className="text-[9px] font-mono text-muted-foreground mt-0.5 uppercase">
+                  {image.size}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }, [images]);
 
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground selection:bg-primary/15">
@@ -413,6 +551,19 @@ export default function Home() {
                   </DialogContent>
                 </Dialog>
 
+                {history.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleUndo}
+                    disabled={isAnyProcessing}
+                    className="h-8 text-xs font-mono border-border bg-card/45 hover:bg-card text-foreground"
+                  >
+                    <Undo2 className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                    UNDO
+                  </Button>
+                )}
+
                 <Button
                   variant="outline"
                   size="sm"
@@ -457,41 +608,7 @@ export default function Home() {
             )}
 
             {/* Flat Assets Grid */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 px-1">
-                <Layers className="h-4 w-4 text-muted-foreground" />
-                <span className="text-[11px] font-mono uppercase tracking-widest text-muted-foreground">
-                  INGESTED FLAT ASSETS (UNALLOCATED)
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                {images.map((image) => (
-                  <div
-                    key={image.id}
-                    className="group relative flex flex-col overflow-hidden rounded border border-border/40 bg-card/10 hover:bg-card/20 transition-all duration-200"
-                  >
-                    <div className="aspect-square w-full overflow-hidden bg-black/5 relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={image.url}
-                        alt={image.name}
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
-                        loading="lazy"
-                      />
-                    </div>
-                    <div className="p-2 border-t border-border/30 bg-card/40 flex flex-col justify-between flex-1 min-h-[50px]">
-                      <div className="truncate text-xxs font-mono text-foreground font-semibold" title={image.name}>
-                        {image.name}
-                      </div>
-                      <div className="text-[9px] font-mono text-muted-foreground mt-0.5 uppercase">
-                        {image.size}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {unallocatedImagesGrid}
           </div>
         ) : (
           /* Workspace Review Board */
@@ -567,6 +684,19 @@ export default function Home() {
                     </div>
                   </DialogContent>
                 </Dialog>
+
+                {history.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleUndo}
+                    disabled={isAnyProcessing}
+                    className="h-8 text-xs font-mono border-border bg-card/45 hover:bg-card text-foreground"
+                  >
+                    <Undo2 className="mr-1.5 h-3.5 w-3.5 text-muted-foreground" />
+                    UNDO
+                  </Button>
+                )}
 
                 <Button
                   variant="outline"
