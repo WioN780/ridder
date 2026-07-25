@@ -4,6 +4,8 @@ Ridder is an automated batch asset clustering and AI listing generation workspac
 
 Rather than manually creating separate listings for dozens of items, sellers can upload all photos in a single batch. Ridder uses computer vision and multimodal AI models to group photos of the same physical item together and generate complete, copy-pasteable product listings.
 
+**Live demo:** https://zhuch.markooba.com
+
 ---
 
 ## Key Features ✨
