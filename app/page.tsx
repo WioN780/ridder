@@ -258,19 +258,22 @@ export default function Home() {
 
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const formData = new FormData();
+      formData.append("api_key", apiKey);
+      formData.append("model", imageModel);
+      formData.append("prompt_template", imagePrompt);
+      formData.append("item_title", listing.title);
+      formData.append("item_description", listing.description);
+      if (imageStyleRef) {
+        formData.append("style_reference_base64", imageStyleRef);
+      }
+      (lot.rawFiles || []).forEach((file) => {
+        formData.append("files", file);
+      });
+
       const res = await fetch(`${baseUrl}/generate-image`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          api_key: apiKey,
-          model: imageModel,
-          prompt_template: imagePrompt,
-          item_title: listing.title,
-          item_description: listing.description,
-          style_reference_base64: imageStyleRef || null,
-        }),
+        body: formData,
       });
 
       if (!res.ok) {
@@ -876,6 +879,7 @@ export default function Home() {
                 loadingImages={loadingImages}
                 errorImages={errorImages}
                 onGenerateImage={generateLotImage}
+                imageModel={imageModel}
               />
             </div>
           </div>

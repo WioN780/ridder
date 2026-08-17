@@ -44,6 +44,7 @@ interface LotCardProps {
   isImageLoading?: boolean;
   imageError?: string | null;
   onGenerateImage?: (lotId: string) => void;
+  imageModel?: string;
 }
 
 export const LotCard = React.memo(function LotCard({
@@ -61,7 +62,9 @@ export const LotCard = React.memo(function LotCard({
   isImageLoading = false,
   imageError = null,
   onGenerateImage = () => {},
+  imageModel = "",
 }: LotCardProps) {
+  const isImagenModel = imageModel.toLowerCase().startsWith("imagen");
   const [descCopied, setDescCopied] = useState(false);
 
 
@@ -73,10 +76,39 @@ export const LotCard = React.memo(function LotCard({
     });
   };
 
-  const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
-    if (lot.rawFiles && lot.rawFiles.length > 0) {
-      e.dataTransfer.clearData();
+  // Synchronously decodes a data URL into a File (dataTransfer must be populated
+  // before the dragstart handler returns, so this can't be done via fetch/await).
+  const dataUrlToFile = (dataUrl: string, baseName: string): File | null => {
+    const match = dataUrl.match(/^data:(.+?);base64,(.*)$/);
+    if (!match) return null;
+    const [, mime, base64] = match;
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const ext = mime.split("/")[1]?.split("+")[0] || "jpg";
+    return new File([bytes], `${baseName}.${ext}`, { type: mime });
+  };
 
+  const handleDragStart = (e: React.DragEvent<HTMLDivElement>) => {
+    e.dataTransfer.clearData();
+
+    if (activeTab === "ai_cover" && generatedImage) {
+      const file = dataUrlToFile(generatedImage, `${lot.name}-ai-cover`);
+      if (file) {
+        try {
+          e.dataTransfer.items.add(file);
+        } catch (err) {
+          console.error("Failed to add AI cover image to dataTransfer:", err);
+        }
+      }
+      e.dataTransfer.effectAllowed = "copy";
+      e.dataTransfer.setData("text/plain", `${lot.name}: AI cover image`);
+      return;
+    }
+
+    if (lot.rawFiles && lot.rawFiles.length > 0) {
       lot.rawFiles.forEach((file) => {
         try {
           e.dataTransfer.items.add(file);
@@ -354,6 +386,11 @@ export const LotCard = React.memo(function LotCard({
                           <p className="text-[9px] text-muted-foreground max-w-xs mx-auto leading-relaxed">
                             Generate a clean, styled studio presentation cover image using your configured prompt template.
                           </p>
+                          {isImagenModel && (
+                            <p className="text-[9px] text-amber-500/90 max-w-xs mx-auto leading-relaxed">
+                              Imagen models don&apos;t look at your photos — pick a Gemini image model in Settings for a cover grounded on the real item.
+                            </p>
+                          )}
                         </div>
                         {imageError && (
                           <div className="text-xxs text-destructive uppercase tracking-wide border border-destructive/20 bg-destructive/5 p-2 rounded max-w-xs mx-auto leading-normal">
@@ -486,22 +523,31 @@ export const LotCard = React.memo(function LotCard({
 
               {/* Drag Photos Handle (Replacing Copy Listing Button) */}
               <div className="pt-4 border-t border-border/40">
-                <div
-                  draggable
-                  onDragStart={handleDragStart}
-                  className="group relative flex flex-col items-center justify-center rounded-lg border border-dashed border-border/50 bg-primary/5 hover:border-primary/40 hover:bg-primary/10 p-4 text-center cursor-grab active:cursor-grabbing transition-all duration-250 select-none"
-                >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary mb-2 transition-transform duration-300 group-hover:scale-105">
-                    <ImageIcon className="h-4 w-4" />
+                {activeTab === "ai_cover" && !generatedImage ? (
+                  <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border/30 bg-card/20 p-4 text-center select-none">
+                    <span className="text-[9px] font-sans text-muted-foreground leading-relaxed">
+                      Generate an AI cover image to drag it out.
+                    </span>
                   </div>
-                  <span className="text-[10px] font-mono font-bold tracking-wider text-foreground uppercase">
-                    DRAG PHOTOS
-                  </span>
-                  <span className="text-[9px] font-sans text-muted-foreground mt-0.5 leading-relaxed">
-                    Click & drag this box to upload all{" "}
-                    {lot.rawFiles?.length || lot.images.length} original photos
-                  </span>
-                </div>
+                ) : (
+                  <div
+                    draggable
+                    onDragStart={handleDragStart}
+                    className="group relative flex flex-col items-center justify-center rounded-lg border border-dashed border-border/50 bg-primary/5 hover:border-primary/40 hover:bg-primary/10 p-4 text-center cursor-grab active:cursor-grabbing transition-all duration-250 select-none"
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-primary mb-2 transition-transform duration-300 group-hover:scale-105">
+                      <ImageIcon className="h-4 w-4" />
+                    </div>
+                    <span className="text-[10px] font-mono font-bold tracking-wider text-foreground uppercase">
+                      {activeTab === "ai_cover" ? "DRAG AI COVER" : "DRAG PHOTOS"}
+                    </span>
+                    <span className="text-[9px] font-sans text-muted-foreground mt-0.5 leading-relaxed">
+                      {activeTab === "ai_cover"
+                        ? "Click & drag this box to upload the AI cover image"
+                        : `Click & drag this box to upload all ${lot.rawFiles?.length || lot.images.length} original photos`}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
