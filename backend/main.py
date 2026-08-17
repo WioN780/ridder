@@ -8,10 +8,14 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
 from google.genai import types
-from PIL import Image
+from PIL import Image, ImageOps
 from pydantic import BaseModel, Field, ValidationError
 
 app = FastAPI(title="Ridder Listing Generation Backend", version="0.2.0")
+
+# None of our generate_content calls use tool/function calling, so disable AFC to
+# silence the SDK's "use Chat.send_message instead" notice on every call.
+_AFC_DISABLED = types.AutomaticFunctionCallingConfig(disable=True)
 
 # Configure CORS dynamically from environment variables
 cors_origins_raw = os.getenv(
@@ -95,6 +99,10 @@ def resize_and_convert_image(image_bytes: bytes) -> bytes:
     """
     try:
         img = Image.open(io.BytesIO(image_bytes))
+
+        # Phone photos often carry an EXIF orientation tag instead of storing pixels
+        # upright; PIL ignores it by default, so lots come out sideways/upside-down.
+        img = ImageOps.exif_transpose(img)
 
         # Convert to RGB mode
         if img.mode in ("RGBA", "P"):
@@ -277,6 +285,7 @@ def generate_listing(
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=pydantic_to_gemini_schema(Listing, currency=currency),
+                    automatic_function_calling=_AFC_DISABLED,
                 ),
             )
 
@@ -342,6 +351,7 @@ def cluster_images_ai(
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=pydantic_to_gemini_schema(ClusterResponse),
+                    automatic_function_calling=_AFC_DISABLED,
                 ),
             )
 
@@ -445,6 +455,7 @@ def generate_batch_listings_ai(
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=pydantic_to_gemini_schema(BatchListingResponse, currency=currency),
+                    automatic_function_calling=_AFC_DISABLED,
                 ),
             )
 
@@ -706,15 +717,6 @@ async def api_generate_batch_listings(
         )
 
 
-class ImageGenerationRequest(BaseModel):
-    api_key: str
-    model: str = "imagen-4.0-generate-001"
-    prompt_template: str
-    item_title: str
-    item_description: str
-    style_reference_base64: Optional[str] = None
-
-
 def decode_base64_image(base64_str: str) -> bytes:
     if "," in base64_str:
         base64_str = base64_str.split(",", 1)[1]
@@ -740,7 +742,8 @@ def describe_style_reference(image_bytes: bytes, api_key: str) -> str:
             contents=[
                 prompt,
                 types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
-            ]
+            ],
+            config=types.GenerateContentConfig(automatic_function_calling=_AFC_DISABLED),
         )
         return response.text or ""
     except Exception as e:
@@ -749,71 +752,145 @@ def describe_style_reference(image_bytes: bytes, api_key: str) -> str:
 
 
 @app.post("/generate-image")
-async def api_generate_image(req: ImageGenerationRequest):
+async def api_generate_image(
+    api_key: str = Form(...),
+    model: str = Form("imagen-4.0-generate-001"),
+    prompt_template: str = Form(...),
+    item_title: str = Form(...),
+    item_description: str = Form(""),
+    style_reference_base64: Optional[str] = Form(None),
+    files: List[UploadFile] = File(default_factory=list),
+):
     """
-    Endpoint to generate an e-commerce studio/styled cover image for a listing.
+    Endpoint to generate an e-commerce studio/styled cover image for a listing,
+    grounded on the lot's own photos.
     Optional style reference base64 image will be analyzed first by Gemini to guide Imagen.
     """
-    if not req.api_key or not req.api_key.strip():
+    if not api_key or not api_key.strip():
         raise HTTPException(status_code=400, detail="Missing Gemini API Key.")
 
     # 1. Analyze style reference image if provided
     style_desc = ""
-    if req.style_reference_base64 and req.style_reference_base64.strip():
+    if style_reference_base64 and style_reference_base64.strip():
         try:
-            style_bytes = decode_base64_image(req.style_reference_base64)
+            style_bytes = decode_base64_image(style_reference_base64)
             # Compress style image first to avoid token overhead
             style_bytes = resize_and_convert_image(style_bytes)
-            style_desc = describe_style_reference(style_bytes, req.api_key)
+            style_desc = describe_style_reference(style_bytes, api_key)
         except Exception as e:
             print(f"[WARNING] Style reference image processing failed: {str(e)}")
 
-    # 2. Build Imagen prompt
-    prompt = req.prompt_template
+    # 2. Compress the lot's chosen photos to ground the generation on the real item.
+    # Cap at 4 reference shots: past that the model gets diluted signal rather than a
+    # clearer picture of the item.
+    lot_images: List[bytes] = []
+    for file in files[:4]:
+        content = await file.read()
+        if content:
+            lot_images.append(resize_and_convert_image(content))
+
+    # 3. Build prompt
+    prompt = prompt_template
     # Replace templates placeholders
     if "{title}" in prompt:
-        prompt = prompt.replace("{title}", req.item_title)
+        prompt = prompt.replace("{title}", item_title)
     else:
-        prompt = f"{prompt}. Subject: {req.item_title}."
+        prompt = f"{prompt}. Subject: {item_title}."
 
     if "{description}" in prompt:
-        prompt = prompt.replace("{description}", req.item_description)
+        prompt = prompt.replace("{description}", item_description)
 
     # Append style description if available
     if style_desc:
         prompt = f"{prompt} Replicate this photography style: {style_desc}"
 
-    # 3. Call Imagen 3 model via google-genai SDK
-    try:
-        client = genai.Client(api_key=req.api_key)
-        
-        response = client.models.generate_images(
-            model=req.model,
-            prompt=prompt,
-            config=types.GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio="1:1",
-                output_mime_type="image/jpeg"
-            )
+    is_imagen = model.lower().startswith("imagen")
+
+    if lot_images and not is_imagen:
+        prompt = (
+            f"{prompt} Use the attached photographs of the real item as the exact "
+            "subject: preserve its true colors, patterns, logos, and silhouette. "
+            "Do not invent a different garment."
         )
 
-        if not response.generated_images:
-            raise ValueError("No images generated by Gemini API.")
+    # 4. Call the image model via google-genai SDK.
+    # Imagen models (name starts with "imagen") use the predict-based generate_images
+    # API, which is text-to-image only. Native Gemini image models (e.g. gemini-*-image)
+    # use generate_content with an IMAGE response modality, and can take the lot's own
+    # photos as input parts so the cover is grounded on the actual item.
+    try:
+        client = genai.Client(api_key=api_key)
+        image_bytes = None
+        image_mime_type = "image/jpeg"
 
-        generated_image = response.generated_images[0]
-        if not generated_image.image or not generated_image.image.image_bytes:
+        if is_imagen:
+            response = client.models.generate_images(
+                model=model,
+                prompt=prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio="1:1",
+                    output_mime_type="image/jpeg"
+                )
+            )
+
+            if not response.generated_images:
+                raise ValueError("No images generated by Gemini API.")
+
+            generated_image = response.generated_images[0]
+            if generated_image.image:
+                image_bytes = generated_image.image.image_bytes
+        else:
+            contents = [prompt] + [
+                types.Part.from_bytes(data=img, mime_type="image/jpeg")
+                for img in lot_images
+            ]
+            gen_config = types.GenerateContentConfig(
+                response_modalities=["TEXT", "IMAGE"],
+                image_config=types.ImageConfig(aspect_ratio="1:1"),
+                automatic_function_calling=_AFC_DISABLED,
+            )
+            try:
+                response = client.models.generate_content(
+                    model=model, contents=contents, config=gen_config,
+                )
+            except Exception as e:
+                # Freshly-released preview image models are sometimes only reachable
+                # on v1alpha before their v1beta promotion; retry there once.
+                if "v1beta" not in str(e):
+                    raise
+                alpha_client = genai.Client(
+                    api_key=api_key,
+                    http_options=types.HttpOptions(api_version="v1alpha"),
+                )
+                response = alpha_client.models.generate_content(
+                    model=model, contents=contents, config=gen_config,
+                )
+
+            for part in response.candidates[0].content.parts:
+                if part.inline_data and part.inline_data.data:
+                    image_bytes = part.inline_data.data
+                    image_mime_type = part.inline_data.mime_type or image_mime_type
+                    break
+
+        if not image_bytes:
             raise ValueError("Generated image data is missing or empty.")
 
         # Encode generated image back to base64 data url for direct use in browser
-        img_b64 = base64.b64encode(generated_image.image.image_bytes).decode("utf-8")
-        image_data_url = f"data:image/jpeg;base64,{img_b64}"
+        img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        image_data_url = f"data:{image_mime_type};base64,{img_b64}"
 
-        return {"image_url": image_data_url}
+        return {
+            "image_url": image_data_url,
+            # True only when the lot's own photos were actually used as input —
+            # Imagen is text-to-image only, so it never grounds on the real item.
+            "grounded": bool(lot_images) and not is_imagen,
+        }
 
     except Exception as e:
         error_msg = str(e)
-        if req.api_key in error_msg:
-            error_msg = error_msg.replace(req.api_key, "********")
+        if api_key in error_msg:
+            error_msg = error_msg.replace(api_key, "********")
         raise HTTPException(
             status_code=502, detail=f"Failed to generate representation image: {error_msg}"
         )

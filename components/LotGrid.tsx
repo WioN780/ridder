@@ -31,6 +31,7 @@ interface LotGridProps {
   loadingImages?: Record<string, boolean>;
   errorImages?: Record<string, string | null>;
   onGenerateImage?: (lotId: string) => void;
+  imageModel?: string;
 }
 
 export const LotGrid = React.memo(function LotGrid({
@@ -46,6 +47,7 @@ export const LotGrid = React.memo(function LotGrid({
   loadingImages = {},
   errorImages = {},
   onGenerateImage = () => {},
+  imageModel = "",
 }: LotGridProps) {
   const [selectedImage, setSelectedImage] = useState<UploadedImage | null>(
     null,
@@ -87,6 +89,7 @@ export const LotGrid = React.memo(function LotGrid({
           isImageLoading={loadingImages[lot.id] || false}
           imageError={errorImages[lot.id] || null}
           onGenerateImage={onGenerateImage}
+          imageModel={imageModel}
         />
       ))}
 
